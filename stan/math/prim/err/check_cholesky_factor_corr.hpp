@@ -4,6 +4,7 @@
 #include <stan/math/prim/fun/Eigen.hpp>
 #include <stan/math/prim/meta.hpp>
 #include <stan/math/prim/fun/to_ref.hpp>
+#include <stan/math/prim/fun/value_of.hpp>
 #include <stan/math/prim/err/check_positive.hpp>
 #include <stan/math/prim/err/check_lower_triangular.hpp>
 #include <stan/math/prim/err/check_square.hpp>
@@ -20,7 +21,7 @@ namespace math {
  * be square, but require at least as many rows M as columns N
  * (i.e., M &gt;= N).
  * Tolerance is specified by <code>math::CONSTRAINT_TOLERANCE</code>.
- * @tparam EigMat Type inheriting from `MatrixBase` with dynamic rows and
+ * @tparam Mat Type inheriting from `MatrixBase` with dynamic rows and
  * columns.
  * @param function Function name (for error messages)
  * @param name Variable name (for error messages)
@@ -29,10 +30,10 @@ namespace math {
  *   factor, if number of rows is less than the number of columns,
  *   if there are 0 columns, or if any element in matrix is NaN
  */
-template <typename EigMat, require_eigen_matrix_dynamic_t<EigMat>* = nullptr>
+template <typename Mat, require_matrix_t<Mat>* = nullptr>
 void check_cholesky_factor_corr(const char* function, const char* name,
-                                const EigMat& y) {
-  const auto& y_ref = to_ref(y);
+                                const Mat& y) {
+  const auto& y_ref = to_ref(value_of(y));
   check_square(function, name, y_ref);
   check_lower_triangular(function, name, y_ref);
   check_positive(function, name, y_ref.diagonal());
