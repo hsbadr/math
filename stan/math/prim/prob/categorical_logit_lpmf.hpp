@@ -7,62 +7,64 @@
 #include <stan/math/prim/fun/log_softmax.hpp>
 #include <stan/math/prim/fun/log_sum_exp.hpp>
 #include <stan/math/prim/fun/sum.hpp>
+#include <stan/math/prim/fun/size_mvt.hpp>
+#include <stan/math/prim/fun/to_ref.hpp>
+#include <stan/math/prim/fun/vector_seq_view.hpp>
+#include <stan/math/prim/fun/scalar_seq_view.hpp>
 #include <vector>
 
 namespace stan {
 namespace math {
 
-// CategoricalLog(n|theta)  [0 < n <= N, theta unconstrained], no checking
-template <bool propto, typename T_prob,
-          require_eigen_col_vector_t<T_prob>* = nullptr>
-return_type_t<T_prob> categorical_logit_lpmf(int n, const T_prob& beta) {
-  static const char* function = "categorical_logit_lpmf";
-  check_bounded(function, "categorical outcome out of support", n, 1,
-                beta.size());
-  ref_type_t<T_prob> beta_ref = beta;
-  check_finite(function, "log odds parameter", beta_ref);
-
-  if (!include_summand<propto, T_prob>::value) {
-    return 0.0;
-  }
-
-  // FIXME:  wasteful vs. creating term (n-1) if not vectorized
-  return beta_ref.coeff(n - 1)
-         - log_sum_exp(beta_ref);  // == log_softmax(beta)(n-1);
-}
-
-template <bool propto, typename T_prob,
-          require_eigen_col_vector_t<T_prob>* = nullptr>
-return_type_t<T_prob> categorical_logit_lpmf(const std::vector<int>& ns,
-                                             const T_prob& beta) {
+/** \ingroup prob_dists
+ * Returns the log PMF of the categorical distribution with a softmax
+ * inverse link function. If containers of integers and/or probabilities
+ * are supplied, returns the log sum of the PMF.
+ *
+ * @tparam T_n type of integer parameters
+ * @tparam T_prob type probability vector(s)
+ * @param n integer parameter(s)
+ * @param beta probability vector(s)
+ * @return log probability
+ */
+template <bool propto, typename T_n, typename T_prob>
+return_type_t<T_prob> categorical_logit_lpmf(const T_n& n, const T_prob& beta) {
   static const char* function = "categorical_logit_lpmf";
 
-  check_bounded(function, "categorical outcome out of support", ns, 1,
-                beta.size());
   ref_type_t<T_prob> beta_ref = beta;
-  check_finite(function, "log odds parameter", beta_ref);
+  scalar_seq_view<T_n> n_vec(n);
+  vector_seq_view<ref_type_t<T_prob>> beta_vec(beta_ref);
 
-  if (!include_summand<propto, T_prob>::value) {
+  size_t vec_size = std::max(size(n), size_mvt(beta_ref));
+
+  if (!include_summand<propto, T_prob>::value || size(n) == 0) {
     return 0.0;
   }
 
-  if (ns.empty()) {
-    return 0.0;
+  if (size_mvt(beta_ref) > 1) {
+    check_consistent_sizes(function, "Integer parameter", n,
+                           "Probabilities parameter", beta_ref);
   }
 
-  Eigen::Matrix<value_type_t<T_prob>, Eigen::Dynamic, 1> log_softmax_beta
-      = log_softmax(beta_ref);
-
-  // FIXME:  replace with more efficient sum()
-  Eigen::Matrix<return_type_t<T_prob>, Eigen::Dynamic, 1> results(ns.size());
-  for (size_t i = 0; i < ns.size(); ++i) {
-    results[i] = log_softmax_beta(ns[i] - 1);
+  for (size_t i = 0; i < vec_size; ++i) {
+    check_bounded(function, "categorical outcome out of support", n_vec[i], 1,
+                  beta_vec[i].size());
+    check_finite(function, "log odds parameter", beta_vec[i]);
   }
-  return sum(results);
+
+  using T_plain = plain_type_t<decltype(beta_ref)>;
+
+  T_plain log_softmax_beta = log_softmax(beta_ref);
+  vector_seq_view<T_plain> log_softmax_beta_vec(log_softmax_beta);
+
+  return_type_t<T_prob> lp(0);
+  for (size_t i = 0; i < vec_size; ++i) {
+    lp += log_softmax_beta_vec[i].coeffRef(n_vec[i] - 1);
+  }
+  return lp;
 }
 
-template <typename T_n, typename T_prob, require_st_integral<T_n>* = nullptr,
-          require_eigen_col_vector_t<T_prob>* = nullptr>
+template <typename T_n, typename T_prob>
 inline return_type_t<T_prob> categorical_logit_lpmf(const T_n& ns,
                                                     const T_prob& beta) {
   return categorical_logit_lpmf<false>(ns, beta);

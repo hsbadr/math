@@ -230,3 +230,121 @@ TEST(ProbDistributionOrderedLogistic, chiSquareGoodnessFitTest) {
     chi += ((bin[j] - expect[j]) * (bin[j] - expect[j]) / expect[j]);
   EXPECT_TRUE(chi < quantile(complement(mydist, 1e-6)));
 }
+
+TEST(ProbDistributionsOrderedLogistic, vecRNG) {
+  using stan::math::ordered_logistic_rng;
+  boost::random::mt19937 rng;
+  Eigen::VectorXd eta_vec(3);
+  eta_vec << -2.5, 1.2, 3.1;
+
+  Eigen::VectorXd cut1(4);
+  cut1 << -3.1, -1.5, 0.4, 1.2;
+  Eigen::VectorXd cut2(4);
+  cut2 << -1.2, -0.4, 1.6, 2.1;
+  Eigen::VectorXd cut3(4);
+  cut3 << -4.1, -3.5, 1.4, 4.2;
+
+  std::vector<Eigen::VectorXd> cuts{cut1, cut2, cut3};
+
+  std::vector<int> rng_vec_stvec = ordered_logistic_rng(eta_vec, cuts, rng);
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_EQ(rng_vec_stvec[i], ordered_logistic_rng(eta_vec[i], cuts[i], rng));
+  }
+
+  boost::random::mt19937 rng2;
+  std::vector<int> rng_real_stvec
+      = ordered_logistic_rng(eta_vec[0], cuts, rng2);
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_EQ(rng_real_stvec[i],
+              ordered_logistic_rng(eta_vec[0], cuts[i], rng2));
+  }
+
+  boost::random::mt19937 rng3;
+  std::vector<int> rng_vec_vec = ordered_logistic_rng(eta_vec, cuts[0], rng3);
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_EQ(rng_vec_vec[i], ordered_logistic_rng(eta_vec[i], cuts[0], rng3));
+  }
+}
+
+TEST(ProbDistributionsOrderedLogistic, vecRNG_throw) {
+  using stan::math::ordered_logistic_rng;
+  boost::random::mt19937 rng;
+
+  Eigen::VectorXd eta_vec(3);
+  eta_vec << -2.5, 1.2, 3.1;
+
+  Eigen::VectorXd cut1(4);
+  cut1 << -3.1, -1.5, 0.4, 1.2;
+
+  std::vector<Eigen::VectorXd> cuts{cut1, cut1, cut1};
+
+  Eigen::VectorXd eig_vec_zero(0);
+  std::vector<Eigen::VectorXd> std_vec_zero(0);
+
+  // Eta must have more than zero elements
+  EXPECT_THROW(ordered_logistic_rng(eig_vec_zero, cuts, rng),
+               std::domain_error);
+
+  // Cut points must be larger than size zero
+  EXPECT_THROW(ordered_logistic_rng(eta_vec, std_vec_zero, rng),
+               std::domain_error);
+
+  EXPECT_THROW(ordered_logistic_rng(eig_vec_zero, std_vec_zero, rng),
+               std::domain_error);
+
+  // Consistent sizes
+  {
+    Eigen::VectorXd etas(2);
+    etas << 1.0, 2.0;
+    Eigen::VectorXd cuts(4);
+    cuts << 1.0, 2.0, 3.0, 4.0;
+    std::vector<Eigen::VectorXd> svec_cuts = {cuts, cuts};
+    EXPECT_NO_THROW(ordered_logistic_rng(etas, cuts, rng));
+    EXPECT_NO_THROW(ordered_logistic_rng(etas, svec_cuts, rng));
+    svec_cuts = {cuts, cuts, cuts};
+    EXPECT_THROW(ordered_logistic_rng(etas, svec_cuts, rng),
+                 std::invalid_argument);
+  }
+
+  // Size of cutpoints in vector
+  {
+    std::vector<Eigen::VectorXd> svec_zero = {eig_vec_zero};
+    EXPECT_THROW(ordered_logistic_rng(1.0, svec_zero, rng), std::domain_error);
+  }
+
+  // Cutpoints ordered in vector
+  {
+    Eigen::VectorXd cuts(4);
+    cuts << 1.0, 0.0, 2.0, 3.0;
+    std::vector<Eigen::VectorXd> svec_cuts = {cuts};
+    EXPECT_THROW(ordered_logistic_rng(1.0, svec_cuts, rng), std::domain_error);
+  }
+
+  double inf = std::numeric_limits<double>::infinity();
+
+  // Cutpoints right end finite
+  {
+    Eigen::VectorXd cuts(4);
+    cuts << 1.0, 2.0, 3.0, inf;
+    std::vector<Eigen::VectorXd> svec_cuts = {cuts};
+    EXPECT_THROW(ordered_logistic_rng(1.0, svec_cuts, rng), std::domain_error);
+  }
+
+  // Cutpoints left end finite
+  {
+    Eigen::VectorXd cuts(4);
+    cuts << -inf, 1.0, 2.0, 3.0;
+    std::vector<Eigen::VectorXd> svec_cuts = {cuts};
+    EXPECT_THROW(ordered_logistic_rng(1.0, svec_cuts, rng), std::domain_error);
+  }
+
+  // Locations finite
+  {
+    Eigen::VectorXd etas(2);
+    etas << inf, inf;
+    Eigen::VectorXd cuts(4);
+    cuts << 1.0, 2.0, 3.0, 4.0;
+    std::vector<Eigen::VectorXd> svec_cuts = {cuts, cuts};
+    EXPECT_THROW(ordered_logistic_rng(etas, svec_cuts, rng), std::domain_error);
+  }
+}

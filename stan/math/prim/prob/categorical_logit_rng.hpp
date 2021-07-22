@@ -6,6 +6,9 @@
 #include <stan/math/prim/fun/cumulative_sum.hpp>
 #include <stan/math/prim/fun/softmax.hpp>
 #include <stan/math/prim/fun/Eigen.hpp>
+#include <stan/math/prim/fun/size_mvt.hpp>
+#include <stan/math/prim/fun/vector_seq_view.hpp>
+#include <stan/math/prim/fun/scalar_seq_view.hpp>
 #include <boost/random/uniform_01.hpp>
 #include <boost/random/variate_generator.hpp>
 
@@ -25,23 +28,34 @@ namespace math {
  * @param rng Pseudo-random number generator.
  * @return Categorical random variate
  */
-template <class RNG>
-inline int categorical_logit_rng(const Eigen::VectorXd& beta, RNG& rng) {
+template <typename T_beta, class RNG>
+inline auto categorical_logit_rng(const T_beta& beta, RNG& rng) {
   using boost::uniform_01;
   using boost::variate_generator;
-  static const char* function = "categorical_logit_rng";
-  check_finite(function, "Log odds parameter", beta);
 
-  variate_generator<RNG&, uniform_01<> > uniform01_rng(rng, uniform_01<>());
-  Eigen::VectorXd theta = softmax(beta);
-  Eigen::VectorXd index = cumulative_sum(theta);
+  vector_seq_view<T_beta> beta_vec(beta);
+  size_t N = size_mvt(beta);
 
-  double c = uniform01_rng();
-  int b = 0;
-  while (c > index(b)) {
-    b++;
+  VectorBuilder<true, int, value_type_t<T_beta>> output(N);
+  variate_generator<RNG&, uniform_01<>> uniform01_rng(rng, uniform_01<>());
+
+  for (size_t n = 0; n < N; ++n) {
+    check_finite("categorical_logit_rng", "Probabilities parameter",
+                 beta_vec[n]);
+
+    const auto& theta = softmax(beta_vec[n]);
+    Eigen::VectorXd index = cumulative_sum(theta);
+
+    double c = uniform01_rng();
+    int b = 0;
+
+    while (c > index(b)) {
+      b++;
+    }
+    output[n] = b + 1;
   }
-  return b + 1;
+
+  return output.data();
 }
 }  // namespace math
 }  // namespace stan
