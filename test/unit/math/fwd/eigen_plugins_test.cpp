@@ -29,10 +29,13 @@ TEST(AgradFwdMatrixAddons, fvar_double_matrix) {
 
   EXPECT_EQ(mat_in.d().rows(), derivs.rows());
   EXPECT_EQ(mat_in.d().cols(), derivs.cols());
+
+  MatrixXd mat_out = mat_in.val_op() * mat_in.d_op();
 }
 
 TEST(AgradFwdMatrixAddons, fvarfvar_double_matrix) {
   using Eigen::MatrixXd;
+  using stan::math::matrix_fd;
   using stan::math::matrix_ffd;
 
   MatrixXd vals = MatrixXd::Random(100, 100);
@@ -58,6 +61,8 @@ TEST(AgradFwdMatrixAddons, fvarfvar_double_matrix) {
 
   EXPECT_EQ(mat_in.d().rows(), derivs.rows());
   EXPECT_EQ(mat_in.d().cols(), derivs.cols());
+
+  matrix_fd mat_out = mat_in.val_op() * mat_in.d_op();
 }
 
 TEST(AgradFwdMatrixAddons, fvar_double_vector) {
@@ -85,10 +90,13 @@ TEST(AgradFwdMatrixAddons, fvar_double_vector) {
 
   EXPECT_EQ(vec_in.d().rows(), derivs.rows());
   EXPECT_EQ(vec_in.d().cols(), derivs.cols());
+
+  VectorXd vec_out = vec_in.val_op().cwiseProduct(vec_in.d_op());
 }
 
 TEST(AgradFwdMatrixAddons, fvarfvar_double_vector) {
   using Eigen::VectorXd;
+  using stan::math::vector_fd;
   using stan::math::vector_ffd;
 
   VectorXd vals = VectorXd::Random(100);
@@ -112,6 +120,8 @@ TEST(AgradFwdMatrixAddons, fvarfvar_double_vector) {
 
   EXPECT_EQ(vec_in.d().rows(), derivs.rows());
   EXPECT_EQ(vec_in.d().cols(), derivs.cols());
+
+  vector_fd vec_out = vec_in.val_op().cwiseProduct(vec_in.d_op());
 }
 
 TEST(AgradFwdMatrixAddons, fvar_double_rowvector) {
@@ -139,10 +149,13 @@ TEST(AgradFwdMatrixAddons, fvar_double_rowvector) {
 
   EXPECT_EQ(row_vec_in.d().rows(), derivs.rows());
   EXPECT_EQ(row_vec_in.d().cols(), derivs.cols());
+
+  RowVectorXd row_vec_out = row_vec_in.val_op().cwiseProduct(row_vec_in.d_op());
 }
 
 TEST(AgradFwdMatrixAddons, fvarfvar_double_rowvector) {
   using Eigen::RowVectorXd;
+  using stan::math::row_vector_fd;
   using stan::math::row_vector_ffd;
 
   RowVectorXd vals = RowVectorXd::Random(100);
@@ -168,4 +181,7 @@ TEST(AgradFwdMatrixAddons, fvarfvar_double_rowvector) {
 
   EXPECT_EQ(row_vec_in.d().rows(), derivs.rows());
   EXPECT_EQ(row_vec_in.d().cols(), derivs.cols());
+
+  row_vector_fd row_vec_out
+      = row_vec_in.val_op().cwiseProduct(row_vec_in.d_op());
 }
