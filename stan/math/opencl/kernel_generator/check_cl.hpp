@@ -7,6 +7,7 @@
 #include <stan/math/opencl/value_type.hpp>
 #include <stan/math/opencl/kernel_generator/as_operation_cl.hpp>
 #include <stan/math/opencl/kernel_generator/operation_cl_lhs.hpp>
+#include <stan/math/opencl/kernel_generator/constant.hpp>
 #include <stan/math/opencl/kernel_generator/scalar.hpp>
 #include <map>
 
@@ -52,37 +53,40 @@ class check_cl_ : public operation_cl_lhs<check_cl_<T>, bool> {
    */
   check_cl_(const char* function, const char* err_variable, T&& y,
             const char* must_be)
-      : buffer_(3, 1),
+      : buffer_(constant(0, 3, 1)),
         value_(1, 1),
         arg_(std::forward<T>(y)),
         function_(function),
         err_variable_(err_variable),
         must_be_(must_be) {
-    buffer_.zeros();
     buffer_.view(matrix_cl_view::Entire);
   }
 
   // this operation can not be used on the right hand side of assignment
   inline kernel_parts get_kernel_parts(...) = delete;
+  inline void extreme_diagonals(...) = delete;
 
   /**
    * Generates kernel code for this and nested expressions.
-   * @param[in,out] generated map from (pointer to) already generated operations
-   * to variable names
+   * @param[in,out] generated map from (pointer to) already generated local
+   * operations to variable names
+   * @param[in,out] generated_all map from (pointer to) already generated all
+   * operations to variable names
    * @param name_gen name generator for this kernel
    * @param row_index_name row index variable name
    * @param col_index_name column index variable name
    * @return part of kernel with code for this and nested expressions
    */
   inline kernel_parts get_kernel_parts_lhs(
-      std::map<const void*, const char*>& generated, name_generator& name_gen,
-      const std::string& row_index_name,
+      std::map<const void*, const char*>& generated,
+      std::map<const void*, const char*>& generated_all,
+      name_generator& name_gen, const std::string& row_index_name,
       const std::string& col_index_name) const {
     kernel_parts res;
     this->var_name_ = name_gen.generate();
     generated[this] = "";
-    res = arg_.get_kernel_parts(generated, name_gen, row_index_name,
-                                col_index_name, false);
+    res = arg_.get_kernel_parts(generated, generated_all, name_gen,
+                                row_index_name, col_index_name, false);
 
     res.args += "__global int* " + var_name_ + "_buffer, __global "
                 + type_str<value_type_t<T>>() + "* " + var_name_ + "_value, ";
@@ -98,16 +102,19 @@ class check_cl_ : public operation_cl_lhs<check_cl_<T>, bool> {
 
   /**
    * Sets kernel arguments for this expression.
-   * @param[in,out] generated map of expressions that already set their kernel
-   * arguments
+   * @param[in,out] generated map from (pointer to) already generated local
+   * operations to variable names
+   * @param[in,out] generated_all map from (pointer to) already generated all
+   * operations to variable names
    * @param kernel kernel to set arguments on
    * @param[in,out] arg_num consecutive number of the first argument to set.
    * This is incremented for each argument set by this function.
    */
   inline void set_args(std::map<const void*, const char*>& generated,
+                       std::map<const void*, const char*>& generated_all,
                        cl::Kernel& kernel, int& arg_num) const {
     generated[this] = "";
-    arg_.set_args(generated, kernel, arg_num);
+    arg_.set_args(generated, generated_all, kernel, arg_num);
     kernel.setArg(arg_num++, buffer_.buffer());
     kernel.setArg(arg_num++, value_.buffer());
   }
@@ -154,12 +161,12 @@ class check_cl_ : public operation_cl_lhs<check_cl_<T>, bool> {
    */
   inline void add_write_event(cl::Event& e) const {
     e.wait();
-    Eigen::VectorXi res = from_matrix_cl<Eigen::Dynamic, 1>(buffer_);
+    Eigen::VectorXi res = from_matrix_cl<Eigen::VectorXi>(buffer_);
     if (res.coeff(0)) {
-      Eigen::VectorXd value = from_matrix_cl<Eigen::Dynamic, 1>(value_);
+      double value = from_matrix_cl<scalar_type_t<T>>(value_);
       std::stringstream s;
       s << function_ << ": " << err_variable_ << "[" << res[1] << ", " << res[2]
-        << "] = " << value[0] << ", but it must be " << must_be_ << "!";
+        << "] = " << value << ", but it must be " << must_be_ << "!";
       throw std::domain_error(s.str());
     }
   }
@@ -183,8 +190,19 @@ class check_cl_ : public operation_cl_lhs<check_cl_<T>, bool> {
    * @param condition whether the state is ok.
    * @throws std::domain_error condition is false (chack failed).
    */
-  void operator=(bool condition) { *this = as_operation_cl(condition); }
+  void operator=(bool condition);  // implemented in multi_result_kernel.hpp
 };
+
+namespace internal {
+template <typename T>
+struct is_scalar_check_impl : std::false_type {};
+
+template <typename T>
+struct is_scalar_check_impl<check_cl_<scalar_<T>>> : std::true_type {};
+
+template <typename T>
+using is_scalar_check = is_scalar_check_impl<std::decay_t<T>>;
+}  // namespace internal
 
 /**
  * Constructs a check on opencl matrix or expression. When assigned a boolean

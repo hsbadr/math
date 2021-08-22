@@ -58,9 +58,13 @@ inline return_type_t<T_y_cl, T_dof_cl, T_scale_cl> scaled_inv_chi_square_lpdf(
     return 0.0;
   }
 
-  const auto& y_val = value_of(y);
-  const auto& nu_val = value_of(nu);
-  const auto& s_val = value_of(s);
+  const auto& y_col = as_column_vector_or_scalar(y);
+  const auto& nu_col = as_column_vector_or_scalar(nu);
+  const auto& s_col = as_column_vector_or_scalar(s);
+
+  const auto& y_val = value_of(y_col);
+  const auto& nu_val = value_of(nu_col);
+  const auto& s_val = value_of(s_col);
 
   auto check_y_not_nan
       = check_cl(function, "Random variable", y_val, "not NaN");
@@ -72,7 +76,7 @@ inline return_type_t<T_y_cl, T_dof_cl, T_scale_cl> scaled_inv_chi_square_lpdf(
       = check_cl(function, "Scale parameter", s_val, "positive finite");
   auto s_positive_finite = isfinite(s_val) && 0 < s_val;
 
-  auto any_y_nonpositive = colwise_max(constant(0, N, 1) + (y_val <= 0.0));
+  auto any_y_nonpositive = colwise_max(cast<char>(y_val <= 0.0));
   auto half_nu = 0.5 * nu_val;
   auto log_y = log(y_val);
   auto inv_y = elt_divide(1.0, y_val);
@@ -102,7 +106,7 @@ inline return_type_t<T_y_cl, T_dof_cl, T_scale_cl> scaled_inv_chi_square_lpdf(
   auto s_deriv = elt_divide(nu_val, s_val)
                  - elt_multiply(elt_multiply(nu_val, inv_y), s_val);
 
-  matrix_cl<int> any_y_nonpositive_cl;
+  matrix_cl<char> any_y_nonpositive_cl;
   matrix_cl<double> logp_cl;
   matrix_cl<double> nu_deriv_cl;
   matrix_cl<double> y_deriv_cl;
@@ -122,7 +126,8 @@ inline return_type_t<T_y_cl, T_dof_cl, T_scale_cl> scaled_inv_chi_square_lpdf(
 
   T_partials_return logp = sum(from_matrix_cl(logp_cl));
 
-  operands_and_partials<T_y_cl, T_dof_cl, T_scale_cl> ops_partials(y, nu, s);
+  operands_and_partials<decltype(y_col), decltype(nu_col), decltype(s_col)>
+      ops_partials(y_col, nu_col, s_col);
 
   if (!is_constant<T_y_cl>::value) {
     ops_partials.edge1_.partials_ = std::move(y_deriv_cl);

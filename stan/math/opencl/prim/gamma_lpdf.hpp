@@ -62,9 +62,13 @@ return_type_t<T_y_cl, T_shape_cl, T_inv_scale_cl> gamma_lpdf(
     return 0.0;
   }
 
-  const auto& y_val = value_of(y);
-  const auto& alpha_val = value_of(alpha);
-  const auto& beta_val = value_of(beta);
+  const auto& y_col = as_column_vector_or_scalar(y);
+  const auto& alpha_col = as_column_vector_or_scalar(alpha);
+  const auto& beta_col = as_column_vector_or_scalar(beta);
+
+  const auto& y_val = value_of(y_col);
+  const auto& alpha_val = value_of(alpha_col);
+  const auto& beta_val = value_of(beta_col);
 
   auto check_y_not_nan
       = check_cl(function, "Random variable", y_val, "not NaN");
@@ -76,7 +80,7 @@ return_type_t<T_y_cl, T_shape_cl, T_inv_scale_cl> gamma_lpdf(
                                         beta_val, "positive finite");
   auto beta_pos_finite_expr = beta_val > 0 && isfinite(beta_val);
 
-  auto any_y_negative_expr = colwise_max(constant(0, N, 1) + (y_val < 0));
+  auto any_y_negative_expr = colwise_max(cast<char>(y_val < 0));
   auto log_y_expr = log(y_val);
   auto log_beta_expr = log(beta_val);
   auto logp1_expr = static_select<include_summand<propto, T_shape_cl>::value>(
@@ -95,7 +99,7 @@ return_type_t<T_y_cl, T_shape_cl, T_inv_scale_cl> gamma_lpdf(
   auto alpha_deriv_expr = log_beta_expr + log_y_expr - digamma(alpha_val);
   auto beta_deriv_expr = elt_divide(alpha_val, beta_val) - y_val;
 
-  matrix_cl<int> any_y_negative_cl;
+  matrix_cl<char> any_y_negative_cl;
   matrix_cl<double> logp_cl;
   matrix_cl<double> y_deriv_cl;
   matrix_cl<double> alpha_deriv_cl;
@@ -116,8 +120,9 @@ return_type_t<T_y_cl, T_shape_cl, T_inv_scale_cl> gamma_lpdf(
 
   T_partials_return logp = sum(from_matrix_cl(logp_cl));
 
-  operands_and_partials<T_y_cl, T_shape_cl, T_inv_scale_cl> ops_partials(
-      y, alpha, beta);
+  operands_and_partials<decltype(y_col), decltype(alpha_col),
+                        decltype(beta_col)>
+      ops_partials(y_col, alpha_col, beta_col);
   if (!is_constant<T_y_cl>::value) {
     ops_partials.edge1_.partials_ = std::move(y_deriv_cl);
   }

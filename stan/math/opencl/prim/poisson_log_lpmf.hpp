@@ -47,10 +47,11 @@ return_type_t<T_log_rate_cl> poisson_log_lpmf(const T_n_cl& n,
     return 0.0;
   }
 
-  const auto& alpha_val = value_of(alpha);
+  const auto& alpha_col = as_column_vector_or_scalar(alpha);
+  const auto& alpha_val = value_of(alpha_col);
 
   T_partials_return logp(0.0);
-  operands_and_partials<T_log_rate_cl> ops_partials(alpha);
+  operands_and_partials<decltype(alpha_col)> ops_partials(alpha_col);
 
   auto check_n_nonnegative
       = check_cl(function, "Random variable", n, "nonnegative");
@@ -59,8 +60,8 @@ return_type_t<T_log_rate_cl> poisson_log_lpmf(const T_n_cl& n,
       = check_cl(function, "Log rate parameter", alpha_val, "not nan");
   auto alpha_not_nan = !isnan(alpha_val);
 
-  auto return_log_zero = colwise_max(
-      constant(0, N, 1) + (isinf(alpha_val) && (alpha_val > 0 || n != 0)));
+  auto return_log_zero
+      = colwise_max(cast<char>(isinf(alpha_val) && (alpha_val > 0 || n != 0)));
   auto exp_alpha = exp(alpha_val);
 
   auto logp1 = elt_multiply(n, alpha_val);
@@ -71,7 +72,7 @@ return_type_t<T_log_rate_cl> poisson_log_lpmf(const T_n_cl& n,
 
   auto deriv = n - exp_alpha;
 
-  matrix_cl<int> return_log_zero_cl;
+  matrix_cl<char> return_log_zero_cl;
   matrix_cl<double> logp_cl;
   matrix_cl<double> deriv_cl;
 

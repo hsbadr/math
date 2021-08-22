@@ -7,6 +7,7 @@
 #include <stan/math/prim/fun/log1m.hpp>
 #include <stan/math/prim/fun/max_size.hpp>
 #include <stan/math/prim/fun/multiply_log.hpp>
+#include <stan/math/prim/fun/scalar_seq_view.hpp>
 #include <stan/math/prim/fun/size.hpp>
 #include <stan/math/prim/fun/size_zero.hpp>
 #include <stan/math/prim/fun/value_of.hpp>
@@ -50,9 +51,10 @@ return_type_t<T_prob> binomial_lpmf(const T_n& n, const T_N& N,
   T_N_ref N_ref = N;
   T_theta_ref theta_ref = theta;
 
-  check_bounded(function, "Successes variable", n_ref, 0, N_ref);
+  check_bounded(function, "Successes variable", value_of(n_ref), 0, N_ref);
   check_nonnegative(function, "Population size parameter", N_ref);
-  check_bounded(function, "Probability parameter", theta_ref, 0.0, 1.0);
+  check_bounded(function, "Probability parameter", value_of(theta_ref), 0.0,
+                1.0);
 
   if (size_zero(n, N, theta)) {
     return 0.0;
@@ -72,7 +74,7 @@ return_type_t<T_prob> binomial_lpmf(const T_n& n, const T_N& N,
 
   VectorBuilder<true, T_partials_return, T_prob> log1m_theta(size_theta);
   for (size_t i = 0; i < size_theta; ++i) {
-    log1m_theta[i] = log1m(value_of(theta_vec[i]));
+    log1m_theta[i] = log1m(theta_vec.val(i));
   }
 
   if (include_summand<propto>::value) {
@@ -86,9 +88,9 @@ return_type_t<T_prob> binomial_lpmf(const T_n& n, const T_N& N,
       if (n_vec[i] == 0) {
         logp += N_vec[i] * log1m_theta[i];
       } else if (n_vec[i] == N_vec[i]) {
-        logp += n_vec[i] * log(value_of(theta_vec[i]));
+        logp += n_vec[i] * log(theta_vec.val(i));
       } else {
-        logp += n_vec[i] * log(value_of(theta_vec[i]))
+        logp += n_vec[i] * log(theta_vec.val(i))
                 + (N_vec[i] - n_vec[i]) * log1m_theta[i];
       }
     }
@@ -102,7 +104,7 @@ return_type_t<T_prob> binomial_lpmf(const T_n& n, const T_N& N,
         sum_n += n_vec[i];
         sum_N += N_vec[i];
       }
-      const T_partials_return theta_dbl = value_of(theta_vec[0]);
+      const T_partials_return theta_dbl = theta_vec.val(0);
       if (sum_N != 0) {
         if (sum_n == 0) {
           ops_partials.edge1_.partials_[0] -= sum_N / (1.0 - theta_dbl);
@@ -115,7 +117,7 @@ return_type_t<T_prob> binomial_lpmf(const T_n& n, const T_N& N,
       }
     } else {
       for (size_t i = 0; i < max_size_seq_view; ++i) {
-        const T_partials_return theta_dbl = value_of(theta_vec[i]);
+        const T_partials_return theta_dbl = theta_vec.val(i);
         if (N_vec[i] != 0) {
           if (n_vec[i] == 0) {
             ops_partials.edge1_.partials_[i] -= N_vec[i] / (1.0 - theta_dbl);

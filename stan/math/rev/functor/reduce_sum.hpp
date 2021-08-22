@@ -4,6 +4,7 @@
 #include <stan/math/prim/meta.hpp>
 #include <stan/math/prim/functor.hpp>
 #include <stan/math/rev/core.hpp>
+
 #include <tbb/task_arena.h>
 #include <tbb/parallel_reduce.h>
 #include <tbb/blocked_range.h>
@@ -52,7 +53,7 @@ struct reduce_sum_impl<ReduceFunction, require_var_t<ReturnType>, ReturnType,
     const size_t num_vars_shared_terms_;  // Number of vars in shared arguments
     double* sliced_partials_;  // Points to adjoints of the partial calculations
     Vec vmapped_;
-    std::ostream* msgs_;
+    std::stringstream msgs_;
     std::tuple<Args...> args_tuple_;
     scoped_args_tuple local_args_tuple_scope_;
     double sum_{0.0};
@@ -60,14 +61,12 @@ struct reduce_sum_impl<ReduceFunction, require_var_t<ReturnType>, ReturnType,
 
     template <typename VecT, typename... ArgsT>
     recursive_reducer(size_t num_vars_per_term, size_t num_vars_shared_terms,
-                      double* sliced_partials, VecT&& vmapped,
-                      std::ostream* msgs, ArgsT&&... args)
+                      double* sliced_partials, VecT&& vmapped, ArgsT&&... args)
         : num_vars_per_term_(num_vars_per_term),
           num_vars_shared_terms_(num_vars_shared_terms),
           sliced_partials_(sliced_partials),
           vmapped_(std::forward<VecT>(vmapped)),
           local_args_tuple_scope_(),
-          msgs_(msgs),
           args_tuple_(std::forward<ArgsT>(args)...) {}
 
     /*
@@ -82,7 +81,6 @@ struct reduce_sum_impl<ReduceFunction, require_var_t<ReturnType>, ReturnType,
           sliced_partials_(other.sliced_partials_),
           vmapped_(other.vmapped_),
           local_args_tuple_scope_(),
-          msgs_(other.msgs_),
           args_tuple_(other.args_tuple_) {}
 
     /**
@@ -146,7 +144,7 @@ struct reduce_sum_impl<ReduceFunction, require_var_t<ReturnType>, ReturnType,
       var sub_sum_v = apply(
           [&](auto&&... args) {
             return ReduceFunction()(local_sub_slice, r.begin(), r.end() - 1,
-                                    msgs_, args...);
+                                    &msgs_, args...);
           },
           args_tuple_local);
 
@@ -181,6 +179,7 @@ struct reduce_sum_impl<ReduceFunction, require_var_t<ReturnType>, ReturnType,
       } else if (args_adjoints_.size() == 0 && rhs.args_adjoints_.size() != 0) {
         args_adjoints_ = rhs.args_adjoints_;
       }
+      msgs_ << rhs.msgs_.str();
     }
   };
 
@@ -248,21 +247,33 @@ struct reduce_sum_impl<ReduceFunction, require_var_t<ReturnType>, ReturnType,
     }
 
     recursive_reducer worker(num_vars_per_term, num_vars_shared_terms, partials,
-                             std::forward<Vec>(vmapped), msgs,
+                             std::forward<Vec>(vmapped),
                              std::forward<Args>(args)...);
 
-    if (auto_partitioning) {
-      tbb::parallel_reduce(
-          tbb::blocked_range<std::size_t>(0, num_terms, grainsize), worker);
-    } else {
-      tbb::simple_partitioner partitioner;
-      tbb::parallel_deterministic_reduce(
-          tbb::blocked_range<std::size_t>(0, num_terms, grainsize), worker,
-          partitioner);
-    }
+    // we must use task isolation as described here:
+    // https://software.intel.com/content/www/us/en/develop/documentation/tbb-documentation/top/intel-threading-building-blocks-developer-guide/task-isolation.html
+    // this is to ensure that the thread local AD tape ressource is
+    // not being modified from a different task which may happen
+    // whenever this function is being used itself in a parallel
+    // context (like running multiple chains for Stan)
+    tbb::this_task_arena::isolate([&] {
+      if (auto_partitioning) {
+        tbb::parallel_reduce(
+            tbb::blocked_range<std::size_t>(0, num_terms, grainsize), worker);
+      } else {
+        tbb::simple_partitioner partitioner;
+        tbb::parallel_deterministic_reduce(
+            tbb::blocked_range<std::size_t>(0, num_terms, grainsize), worker,
+            partitioner);
+      }
+    });
 
     for (size_t i = 0; i < num_vars_shared_terms; ++i) {
       partials[num_vars_sliced_terms + i] = worker.args_adjoints_.coeff(i);
+    }
+
+    if (msgs) {
+      *msgs << worker.msgs_.str();
     }
 
     return var(new precomputed_gradients_vari(

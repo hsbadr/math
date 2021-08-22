@@ -6,6 +6,7 @@
 #include <stan/math/prim/err.hpp>
 #include <stan/math/opencl/kernel_generator.hpp>
 #include <stan/math/prim/functor/operands_and_partials.hpp>
+#include <stan/math/prim/fun/binomial_coefficient_log.hpp>
 
 namespace stan {
 namespace math {
@@ -27,10 +28,11 @@ namespace math {
  * @throw std::domain_error if theta is not a valid probability
  * @throw std::invalid_argument if container sizes mismatch
  */
-template <
-    bool propto, typename T_n_cl, typename T_N_cl, typename T_prob_cl,
-    require_all_prim_or_rev_kernel_expression_t<T_n_cl, T_prob_cl>* = nullptr,
-    require_any_not_stan_scalar_t<T_n_cl, T_prob_cl>* = nullptr>
+template <bool propto, typename T_n_cl, typename T_N_cl, typename T_prob_cl,
+          require_all_prim_or_rev_kernel_expression_t<T_n_cl, T_N_cl,
+                                                      T_prob_cl>* = nullptr,
+          require_any_nonscalar_prim_or_rev_kernel_expression_t<
+              T_n_cl, T_N_cl, T_prob_cl>* = nullptr>
 return_type_t<T_prob_cl> binomial_lpmf(const T_n_cl& n, const T_N_cl N,
                                        const T_prob_cl& theta) {
   static const char* function = "binomial_lpmf(OpenCL)";
@@ -48,7 +50,8 @@ return_type_t<T_prob_cl> binomial_lpmf(const T_n_cl& n, const T_N_cl N,
     return 0.0;
   }
 
-  const auto& theta_val = value_of(theta);
+  const auto& theta_col = as_column_vector_or_scalar(theta);
+  const auto& theta_val = value_of(theta_col);
 
   auto check_n_bounded
       = check_cl(function, "Successes variable", n, "in the interval [0, N]");
@@ -104,7 +107,7 @@ return_type_t<T_prob_cl> binomial_lpmf(const T_n_cl& n, const T_N_cl N,
                     calc_if<need_deriv>(deriv_theta));
 
   T_partials_return logp = sum(from_matrix_cl(logp_cl));
-  operands_and_partials<T_prob_cl> ops_partials(theta);
+  operands_and_partials<decltype(theta_col)> ops_partials(theta_col);
 
   if (!is_constant_all<T_prob_cl>::value) {
     if (need_sums) {

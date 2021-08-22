@@ -49,9 +49,13 @@ inline return_type_t<T_y_cl, T_shape_cl, T_scale_cl> weibull_lpdf(
     return 0.0;
   }
 
-  const auto& y_val = value_of(y);
-  const auto& alpha_val = value_of(alpha);
-  const auto& sigma_val = value_of(sigma);
+  const auto& y_col = as_column_vector_or_scalar(y);
+  const auto& alpha_col = as_column_vector_or_scalar(alpha);
+  const auto& sigma_col = as_column_vector_or_scalar(sigma);
+
+  const auto& y_val = value_of(y_col);
+  const auto& alpha_val = value_of(alpha_col);
+  const auto& sigma_val = value_of(sigma_col);
 
   auto check_y_finite = check_cl(function, "Random variable", y_val, "finite");
   auto y_finite = isfinite(y_val);
@@ -62,7 +66,7 @@ inline return_type_t<T_y_cl, T_shape_cl, T_scale_cl> weibull_lpdf(
       = check_cl(function, "Scale parameter", sigma_val, "positive finite");
   auto sigma_positive_finite = isfinite(sigma_val) && 0 < sigma_val;
 
-  auto any_y_negative = colwise_max(constant(0, N, 1) + (y_val < 0));
+  auto any_y_negative = colwise_max(cast<char>(y_val < 0));
   auto log_y = log(y_val);
   auto log_sigma = log(sigma_val);
   auto inv_sigma = elt_divide(1., sigma_val);
@@ -87,7 +91,7 @@ inline return_type_t<T_y_cl, T_shape_cl, T_scale_cl> weibull_lpdf(
   auto sigma_deriv = elt_multiply(elt_multiply(alpha_val, inv_sigma),
                                   -one_m_y_div_sigma_pow_alpha);
 
-  matrix_cl<int> any_y_negative_cl;
+  matrix_cl<char> any_y_negative_cl;
   matrix_cl<double> logp_cl;
   matrix_cl<double> alpha_deriv_cl;
   matrix_cl<double> y_deriv_cl;
@@ -108,8 +112,9 @@ inline return_type_t<T_y_cl, T_shape_cl, T_scale_cl> weibull_lpdf(
 
   T_partials_return logp = sum(from_matrix_cl(logp_cl));
 
-  operands_and_partials<T_y_cl, T_shape_cl, T_scale_cl> ops_partials(y, alpha,
-                                                                     sigma);
+  operands_and_partials<decltype(y_col), decltype(alpha_col),
+                        decltype(sigma_col)>
+      ops_partials(y_col, alpha_col, sigma_col);
 
   if (!is_constant<T_y_cl>::value) {
     ops_partials.edge1_.partials_ = std::move(y_deriv_cl);

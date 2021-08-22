@@ -1,6 +1,7 @@
 #ifndef STAN_MATH_REV_CORE_VARI_HPP
 #define STAN_MATH_REV_CORE_VARI_HPP
 
+#include <stan/math/rev/core/var_value_fwd_declare.hpp>
 #include <stan/math/rev/core/chainable_alloc.hpp>
 #include <stan/math/rev/core/chainablestack.hpp>
 #include <stan/math/rev/core/arena_matrix.hpp>
@@ -11,13 +12,9 @@
 namespace stan {
 namespace math {
 
-// forward decleration of vari_value
+// forward declaration of vari_value
 template <typename T, typename = void>
 class vari_value;
-
-// forward declaration of var
-template <typename T, typename = void>
-class var_value;
 
 /**
  * Abstract base class that all `vari_value` and it's derived classes inherit.
@@ -348,6 +345,21 @@ class vari_view_eigen {
   }
 
   /**
+   * View diagonal of eigen matrices
+   * @param i Column index to slice
+   */
+  inline auto diagonal() const {
+    using inner_type = decltype(derived().val_.diagonal());
+    return vari_view<inner_type>(derived().val_.diagonal(),
+                                 derived().adj_.diagonal());
+  }
+  inline auto diagonal() {
+    using inner_type = decltype(derived().val_.diagonal());
+    return vari_view<inner_type>(derived().val_.diagonal(),
+                                 derived().adj_.diagonal());
+  }
+
+  /**
    * Get coefficient of eigen matrices
    * @param i Row index
    * @param j Column index
@@ -529,6 +541,20 @@ class vari_view_eigen {
   }
 
   /**
+   * Return an Array expression
+   */
+  inline auto array() const {
+    using inner_type = decltype(derived().val_.array());
+    return vari_view<inner_type>(derived().val_.array(),
+                                 derived().adj_.array());
+  }
+  inline auto array() {
+    using inner_type = decltype(derived().val_.array());
+    return vari_view<inner_type>(derived().val_.array(),
+                                 derived().adj_.array());
+  }
+
+  /**
    * Return the number of rows for this class's `val_` member
    */
   inline Eigen::Index rows() const { return derived().val_.rows(); }
@@ -543,9 +569,10 @@ class vari_view_eigen {
 };
 
 template <typename T>
-class vari_view<T, require_not_plain_type_t<T>> final
-    : public vari_base,
-      public vari_view_eigen<vari_view<T, require_not_plain_type_t<T>>> {
+class vari_view<
+    T, require_all_t<is_eigen<T>, bool_constant<!is_plain_type<T>::value>>>
+    final : public vari_base,
+            public vari_view_eigen<vari_view<T, require_not_plain_type_t<T>>> {
  public:
   using PlainObject = plain_type_t<T>;
   using value_type = std::decay_t<T>;  // The underlying type for this class

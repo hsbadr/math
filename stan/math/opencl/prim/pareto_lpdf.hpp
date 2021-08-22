@@ -52,9 +52,13 @@ return_type_t<T_y_cl, T_scale_cl, T_shape_cl> pareto_lpdf(
     return 0.0;
   }
 
-  const auto& y_val = value_of(y);
-  const auto& y_min_val = value_of(y_min);
-  const auto& alpha_val = value_of(alpha);
+  const auto& y_col = as_column_vector_or_scalar(y);
+  const auto& y_min_col = as_column_vector_or_scalar(y_min);
+  const auto& alpha_col = as_column_vector_or_scalar(alpha);
+
+  const auto& y_val = value_of(y_col);
+  const auto& y_min_val = value_of(y_min_col);
+  const auto& alpha_val = value_of(alpha_col);
 
   auto check_y_not_nan
       = check_cl(function, "Random variable", y_val, "not NaN");
@@ -66,7 +70,7 @@ return_type_t<T_y_cl, T_scale_cl, T_shape_cl> pareto_lpdf(
       = check_cl(function, "Shape parameter", alpha_val, "positive finite");
   auto alpha_positive_finite = 0 < alpha_val && isfinite(alpha_val);
 
-  auto y_less_than_y_min = colwise_max(constant(0, N, 1) + (y_val < y_min_val));
+  auto y_less_than_y_min = colwise_max(cast<char>(y_val < y_min_val));
   auto log_y = log(y_val);
   auto inv_y = elt_divide(1.0, y_val);
   auto log_y_min = log(y_min_val);
@@ -83,7 +87,7 @@ return_type_t<T_y_cl, T_scale_cl, T_shape_cl> pareto_lpdf(
   auto y_min_deriv = elt_divide(alpha_val, y_min_val);
   auto alpha_deriv = elt_divide(1.0, alpha_val) + log_y_min - log_y;
 
-  matrix_cl<int> y_less_than_y_min_cl;
+  matrix_cl<char> y_less_than_y_min_cl;
   matrix_cl<double> logp_cl;
   matrix_cl<double> y_min_deriv_cl;
   matrix_cl<double> y_deriv_cl;
@@ -104,8 +108,9 @@ return_type_t<T_y_cl, T_scale_cl, T_shape_cl> pareto_lpdf(
 
   T_partials_return logp = sum(from_matrix_cl(logp_cl));
 
-  operands_and_partials<T_y_cl, T_scale_cl, T_shape_cl> ops_partials(y, y_min,
-                                                                     alpha);
+  operands_and_partials<decltype(y_col), decltype(y_min_col),
+                        decltype(alpha_col)>
+      ops_partials(y_col, y_min_col, alpha_col);
 
   if (!is_constant<T_y_cl>::value) {
     ops_partials.edge1_.partials_ = std::move(y_deriv_cl);

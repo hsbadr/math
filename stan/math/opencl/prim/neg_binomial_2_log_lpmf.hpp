@@ -10,6 +10,7 @@
 #include <stan/math/prim/fun/exp.hpp>
 #include <stan/math/opencl/kernel_generator.hpp>
 #include <stan/math/prim/functor/operands_and_partials.hpp>
+#include <stan/math/prim/fun/log1p_exp.hpp>
 
 namespace stan {
 namespace math {
@@ -59,8 +60,11 @@ neg_binomial_2_log_lpmf(const T_n_cl& n, const T_log_location_cl& eta,
     return 0.0;
   }
 
-  const auto& eta_val = value_of(eta);
-  const auto& phi_val = value_of(phi);
+  const auto& eta_col = as_column_vector_or_scalar(eta);
+  const auto& phi_col = as_column_vector_or_scalar(phi);
+
+  const auto& eta_val = value_of(eta_col);
+  const auto& phi_val = value_of(phi_col);
 
   auto check_n_nonnegative
       = check_cl(function, "Failures variable", n, "nonnegative");
@@ -104,8 +108,8 @@ neg_binomial_2_log_lpmf(const T_n_cl& n, const T_log_location_cl& eta,
 
   T_partials_return logp = sum(from_matrix_cl(logp_cl));
 
-  operands_and_partials<T_log_location_cl, T_precision_cl> ops_partials(eta,
-                                                                        phi);
+  operands_and_partials<decltype(eta_col), decltype(phi_col)> ops_partials(
+      eta_col, phi_col);
 
   if (!is_constant<T_log_location_cl>::value) {
     ops_partials.edge1_.partials_ = std::move(eta_deriv_cl);

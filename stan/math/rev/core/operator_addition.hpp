@@ -5,6 +5,8 @@
 #include <stan/math/rev/core/var.hpp>
 #include <stan/math/prim/err/check_matching_dims.hpp>
 #include <stan/math/rev/core/callback_vari.hpp>
+#include <stan/math/prim/fun/as_column_vector_or_scalar.hpp>
+#include <stan/math/prim/fun/as_array_or_scalar.hpp>
 #include <stan/math/prim/fun/constants.hpp>
 
 namespace stan {
@@ -51,13 +53,8 @@ namespace math {
 inline var operator+(const var& a, const var& b) {
   return make_callback_vari(a.vi_->val_ + b.vi_->val_,
                             [avi = a.vi_, bvi = b.vi_](const auto& vi) mutable {
-                              if (unlikely(std::isnan(vi.val_))) {
-                                avi->adj_ = NOT_A_NUMBER;
-                                bvi->adj_ = NOT_A_NUMBER;
-                              } else {
-                                avi->adj_ += vi.adj_;
-                                bvi->adj_ += vi.adj_;
-                              }
+                              avi->adj_ += vi.adj_;
+                              bvi->adj_ += vi.adj_;
                             });
 }
 
@@ -78,14 +75,9 @@ inline var operator+(const var& a, Arith b) {
   if (unlikely(b == 0.0)) {
     return a;
   }
-  return make_callback_vari(a.vi_->val_ + b,
-                            [avi = a.vi_, b](const auto& vi) mutable {
-                              if (unlikely(std::isnan(vi.val_))) {
-                                avi->adj_ = NOT_A_NUMBER;
-                              } else {
-                                avi->adj_ += vi.adj_;
-                              }
-                            });
+  return make_callback_vari(
+      a.vi_->val_ + b,
+      [avi = a.vi_, b](const auto& vi) mutable { avi->adj_ += vi.adj_; });
 }
 
 /**
@@ -119,15 +111,17 @@ template <typename VarMat1, typename VarMat2,
 inline auto add(const VarMat1& a, const VarMat2& b) {
   check_matching_dims("add", "a", a, "b", b);
   using op_ret_type = decltype(a.val() + b.val());
-  using ret_type = promote_var_matrix_t<op_ret_type, VarMat1, VarMat2>;
+  using ret_type = return_var_matrix_t<op_ret_type, VarMat1, VarMat2>;
   arena_t<VarMat1> arena_a(a);
   arena_t<VarMat2> arena_b(b);
   arena_t<ret_type> ret(arena_a.val() + arena_b.val());
   reverse_pass_callback([ret, arena_a, arena_b]() mutable {
-    for (Eigen::Index i = 0; i < ret.size(); ++i) {
-      const auto ref_adj = ret.adj().coeffRef(i);
-      arena_a.adj().coeffRef(i) += ref_adj;
-      arena_b.adj().coeffRef(i) += ref_adj;
+    for (Eigen::Index j = 0; j < ret.cols(); ++j) {
+      for (Eigen::Index i = 0; i < ret.rows(); ++i) {
+        const auto ref_adj = ret.adj().coeffRef(i, j);
+        arena_a.adj().coeffRef(i, j) += ref_adj;
+        arena_b.adj().coeffRef(i, j) += ref_adj;
+      }
     }
   });
   return ret_type(ret);
@@ -151,7 +145,7 @@ inline auto add(const VarMat& a, const Arith& b) {
   }
   using op_ret_type
       = decltype((a.val().array() + as_array_or_scalar(b)).matrix());
-  using ret_type = promote_var_matrix_t<op_ret_type, VarMat>;
+  using ret_type = return_var_matrix_t<op_ret_type, VarMat>;
   arena_t<VarMat> arena_a(a);
   arena_t<ret_type> ret(arena_a.val().array() + as_array_or_scalar(b));
   reverse_pass_callback(
@@ -188,7 +182,7 @@ template <typename Var, typename EigMat,
           require_var_vt<std::is_arithmetic, Var>* = nullptr,
           require_eigen_vt<std::is_arithmetic, EigMat>* = nullptr>
 inline auto add(const Var& a, const EigMat& b) {
-  using ret_type = promote_scalar_t<var, EigMat>;
+  using ret_type = return_var_matrix_t<EigMat>;
   arena_t<ret_type> ret(a.val() + b.array());
   reverse_pass_callback([ret, a]() mutable { a.adj() += ret.adj().sum(); });
   return ret_type(ret);
@@ -224,16 +218,19 @@ template <typename Var, typename VarMat,
           require_var_vt<std::is_arithmetic, Var>* = nullptr,
           require_rev_matrix_t<VarMat>* = nullptr>
 inline auto add(const Var& a, const VarMat& b) {
+  using ret_type = return_var_matrix_t<VarMat>;
   arena_t<VarMat> arena_b(b);
-  arena_t<VarMat> ret(a.val() + arena_b.val().array());
+  arena_t<ret_type> ret(a.val() + arena_b.val().array());
   reverse_pass_callback([ret, a, arena_b]() mutable {
-    for (Eigen::Index i = 0; i < arena_b.size(); ++i) {
-      const auto ret_adj = ret.adj().coeffRef(i);
-      a.adj() += ret_adj;
-      arena_b.adj().coeffRef(i) += ret_adj;
+    for (Eigen::Index j = 0; j < ret.cols(); ++j) {
+      for (Eigen::Index i = 0; i < ret.rows(); ++i) {
+        const auto ret_adj = ret.adj().coeffRef(i, j);
+        a.adj() += ret_adj;
+        arena_b.adj().coeffRef(i, j) += ret_adj;
+      }
     }
   });
-  return plain_type_t<VarMat>(ret);
+  return ret_type(ret);
 }
 
 /**
