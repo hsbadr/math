@@ -9,6 +9,7 @@
 #include <stan/math/rev/fun/value_of.hpp>
 #include <stan/math/rev/core.hpp>
 #include <stan/math/prim/fun/value_of_rec.hpp>
+#include <stan/math/prim/fun/symmetrize_from_lower_tri.hpp>
 #include <stan/math/prim/err/check_pos_definite.hpp>
 #include <stan/math/prim/err/check_square.hpp>
 #include <stan/math/prim/err/check_symmetric.hpp>
@@ -20,11 +21,11 @@ namespace math {
 
 namespace internal {
 template <typename LMat, typename LAMat>
-inline void initialize_return(LMat& L, const LAMat& L_A, vari*& dummy) {
+inline void initialize_return(LMat& L, const LAMat& L_A) {
   for (Eigen::Index j = 0; j < L_A.rows(); ++j) {
     for (Eigen::Index i = 0; i < L_A.rows(); ++i) {
       if (j > i) {
-        L.coeffRef(i, j) = dummy;
+        L.coeffRef(i, j) = new vari(L_A.coeffRef(i, j), false);
       } else {
         L.coeffRef(i, j) = new vari(L_A.coeffRef(i, j), false);
       }
@@ -58,6 +59,7 @@ inline auto unblocked_cholesky_lambda(T1& L_A, T2& L, T3& A) {
           adjA.coeffRef(i, j) = 0.5 * adjL.coeff(i, j) / L_A.coeff(i, j);
         } else {
           adjA.coeffRef(i, j) = adjL.coeff(i, j) / L_A.coeff(j, j);
+          adjA.coeffRef(j, i) = adjA.coeff(i, j); 
           adjL.coeffRef(j, j)
               -= adjL.coeff(i, j) * L_A.coeff(i, j) / L_A.coeff(j, j);
         }
@@ -83,8 +85,7 @@ inline auto cholesky_lambda(T1& L_A, T2& L, T3& A) {
     using Eigen::Lower;
     using Eigen::StrictlyUpper;
     using Eigen::Upper;
-    Eigen::MatrixXd L_adj = Eigen::MatrixXd::Zero(L.rows(), L.cols());
-    L_adj.template triangularView<Eigen::Lower>() = L.adj();
+    Eigen::MatrixXd L_adj = L.adj();
     const int M_ = L_A.rows();
     int block_size_ = std::max(M_ / 8, 8);
     block_size_ = std::min(block_size_, 128);
@@ -115,7 +116,7 @@ inline auto cholesky_lambda(T1& L_A, T2& L, T3& A) {
       R_adj.noalias() -= D_adj.template selfadjointView<Lower>() * R;
       D_adj.diagonal() *= 0.5;
     }
-    A.adj().template triangularView<Eigen::Lower>() += L_adj;
+    A.adj() += symmetrize_from_lower_tri(L_adj);
   };
 }
 }  // namespace internal
@@ -144,13 +145,16 @@ inline auto cholesky_decompose(const EigMat& A) {
   L_A.template triangularView<Eigen::StrictlyUpper>().setZero();
   // looping gradient calcs faster for small matrices compared to
   // cholesky_block
-  vari* dummy = new vari(0.0, false);
+  // ** CHANGED 07/01/2022 ** 
+  // testing if symmetric return makes the gradients more stable
+  // vari* dummy = new vari(0.0, false);
+  
   arena_t<EigMat> L(L_A.rows(), L_A.cols());
   if (L_A.rows() <= 35) {
-    internal::initialize_return(L, L_A, dummy);
+    internal::initialize_return(L, L_A);
     reverse_pass_callback(internal::unblocked_cholesky_lambda(L_A, L, arena_A));
   } else {
-    internal::initialize_return(L, L_A, dummy);
+    internal::initialize_return(L, L_A);
     reverse_pass_callback(internal::cholesky_lambda(L_A, L, arena_A));
   }
   return plain_type_t<EigMat>(L);
