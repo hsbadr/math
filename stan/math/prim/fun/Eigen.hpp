@@ -19,6 +19,13 @@
 #define EIGEN_ARRAYBASE_PLUGIN "stan/math/prim/eigen_plugins.h"
 #endif
 
+template<int OuterStrideAtCompileTime, int InnerStrideAtCompileTime>
+class Stride;
+template<typename ViewOp,    typename MatrixType, typename StrideType = Stride<0,0>>
+class CwiseUnaryView;
+template<typename ViewOp, typename MatrixType, typename StrideType, typename StorageKind>
+class CwiseUnaryViewImpl;
+
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 #include <Eigen/QR>
